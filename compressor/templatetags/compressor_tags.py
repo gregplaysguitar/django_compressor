@@ -1,14 +1,19 @@
 import time
 
 from django import template
+from django.core.exceptions import ImproperlyConfigured
 
-from compressor import CssCompressor, JsCompressor
-from compressor.cache import cache
+from compressor.cache import cache, get_offline_cachekey
 from compressor.conf import settings
-
+from compressor.utils import get_class
 
 OUTPUT_FILE = 'file'
 OUTPUT_INLINE = 'inline'
+OUTPUT_MODES = (OUTPUT_FILE, OUTPUT_INLINE)
+COMPRESSORS = {
+    "css": settings.COMPRESS_CSS_COMPRESSOR,
+    "js": settings.COMPRESS_JS_COMPRESSOR,
+}
 
 register = template.Library()
 
@@ -17,6 +22,8 @@ class CompressorNode(template.Node):
         self.nodelist = nodelist
         self.kind = kind
         self.mode = mode
+        self.compressor_cls = get_class(
+            COMPRESSORS.get(self.kind), exception=ImproperlyConfigured)
 
     def cache_get(self, key):
         packed_val = cache.get(key)
@@ -26,36 +33,43 @@ class CompressorNode(template.Node):
         if (time.time() > refresh_time) and not refreshed:
             # Store the stale value while the cache
             # revalidates for another MINT_DELAY seconds.
-            self.cache_set(key, val, timeout=settings.MINT_DELAY, refreshed=True)
+            self.cache_set(key, val, timeout=settings.COMPRESS_MINT_DELAY, refreshed=True)
             return None
         return val
 
-    def cache_set(self, key, val, timeout=settings.REBUILD_TIMEOUT, refreshed=False):
+    def cache_set(self, key, val, timeout=settings.COMPRESS_REBUILD_TIMEOUT, refreshed=False):
         refresh_time = timeout + time.time()
-        real_timeout = timeout + settings.MINT_DELAY
+        real_timeout = timeout + settings.COMPRESS_MINT_DELAY
         packed_val = (val, refresh_time, refreshed)
         return cache.set(key, packed_val, real_timeout)
 
-    def render(self, context):
+    def cache_key(self, compressor):
+        return "%s.%s.%s" % (compressor.cachekey, self.mode, self.kind)
+
+    def render(self, context, forced=False):
+        if (settings.COMPRESS_ENABLED and settings.COMPRESS_OFFLINE) and not forced:
+            key = get_offline_cachekey(self.nodelist)
+            content = cache.get(key)
+            if content:
+                return content
         content = self.nodelist.render(context)
-        if not settings.COMPRESS or not len(content.strip()):
+        if (not settings.COMPRESS_ENABLED or not len(content.strip())) and not forced:
             return content
-        if self.kind == 'css':
-            compressor = CssCompressor(content)
-        if self.kind == 'js':
-            compressor = JsCompressor(content)
-        cachekey = "%s-%s" % (compressor.cachekey, self.mode)
+        compressor = self.compressor_cls(content)
+        cachekey = self.cache_key(compressor)
         output = self.cache_get(cachekey)
-        if output is None:
+        if output is None or forced:
             try:
-                if self.mode == OUTPUT_FILE:
-                    output = compressor.output()
-                else:
-                    output = compressor.output_inline()
+                if self.mode == OUTPUT_INLINE:
+                    return compressor.output_inline()
+                output = compressor.output(forced=forced)
                 self.cache_set(cachekey, output)
             except:
-                from traceback import format_exc
-                raise Exception(format_exc())
+                if settings.DEBUG:
+                    from traceback import format_exc
+                    raise Exception(format_exc())
+                else:
+                    return content
         return output
 
 @register.tag
@@ -103,17 +117,20 @@ def compress(parser, token):
     args = token.split_contents()
 
     if not len(args) in (2, 3):
-        raise template.TemplateSyntaxError("%r tag requires either one or two arguments." % args[0])
+        raise template.TemplateSyntaxError(
+            "%r tag requires either one or two arguments." % args[0])
 
     kind = args[1]
-    if not kind in ['css', 'js']:
-        raise template.TemplateSyntaxError("%r's argument must be 'js' or 'css'." % args[0])
+    if not kind in COMPRESSORS.keys():
+        raise template.TemplateSyntaxError(
+            "%r's argument must be 'js' or 'css'." % args[0])
 
     if len(args) == 3:
         mode = args[2]
-        if not mode in (OUTPUT_FILE, OUTPUT_INLINE):
-            raise template.TemplateSyntaxError("%r's second argument must be '%s' or '%s'." % (args[0], OUTPUT_FILE, OUTPUT_INLINE))
+        if not mode in OUTPUT_MODES:
+            raise template.TemplateSyntaxError(
+                "%r's second argument must be '%s' or '%s'." %
+                (args[0], OUTPUT_FILE, OUTPUT_INLINE))
     else:
         mode = OUTPUT_FILE
-
     return CompressorNode(nodelist, kind, mode)

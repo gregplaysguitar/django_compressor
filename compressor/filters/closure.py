@@ -1,26 +1,21 @@
-import subprocess
+from subprocess import Popen, PIPE
 
 from compressor.conf import settings
 from compressor.filters import FilterBase, FilterError
+from compressor.utils import cmd_split
 
 
 class ClosureCompilerFilter(FilterBase):
 
     def output(self, **kwargs):
-        arguments = settings.CLOSURE_COMPILER_ARGUMENTS
+        arguments = settings.COMPRESS_CLOSURE_COMPILER_ARGUMENTS
 
-        command = '%s %s' % (settings.CLOSURE_COMPILER_BINARY, arguments)
+        command = '%s %s' % (settings.COMPRESS_CLOSURE_COMPILER_BINARY, arguments)
 
         try:
-            p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-            p.stdin.write(self.content)
-            p.stdin.close()
+            p = Popen(cmd_split(command), stdout=PIPE, stdin=PIPE, stderr=PIPE)
+            filtered, err = p.communicate(self.content)
 
-            filtered = p.stdout.read()
-            p.stdout.close()
-
-            err = p.stderr.read()
-            p.stderr.close()
         except IOError, e:
             raise FilterError(e)
 

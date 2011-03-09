@@ -1,17 +1,16 @@
-from django.conf import settings as django_settings
-
 from compressor.conf import settings
-from compressor.base import Compressor, UncompressableFileError
+from compressor.base import Compressor
+from compressor.exceptions import UncompressableFileError
+
 
 class JsCompressor(Compressor):
 
-    def __init__(self, content, output_prefix="js"):
-        self.extension = ".js"
+    def __init__(self, content=None, output_prefix="js"):
+        super(JsCompressor, self).__init__(content, output_prefix)
         self.template_name = "compressor/js.html"
         self.template_name_inline = "compressor/js_inline.html"
-        self.filters = settings.COMPRESS_JS_FILTERS
+        self.filters = list(settings.COMPRESS_JS_FILTERS)
         self.type = 'js'
-        super(JsCompressor, self).__init__(content, output_prefix)
 
     def split_contents(self):
         if self.split_content:
@@ -22,7 +21,7 @@ class JsCompressor(Compressor):
                 try:
                     self.split_content.append(('file', self.get_filename(attribs['src']), elem))
                 except UncompressableFileError:
-                    if django_settings.DEBUG:
+                    if settings.DEBUG:
                         raise
             else:
                 content = self.parser.elem_content(elem)
