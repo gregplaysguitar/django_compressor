@@ -1,5 +1,7 @@
 build
-*CACHE*
+compressor/tests/media/CACHE
+compressor/tests/media/custom
+compressor/tests/media/js/066cd253eada.js
 dist
 MANIFEST
 *.pyc
@@ -7,3 +9,5 @@ MANIFEST
 .tox/
 *.egg
 docs/_build/
+.coverage
+htmlcov
