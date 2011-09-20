@@ -78,7 +78,7 @@ class CompressorNode(template.Node):
             return rendered_output
         except Exception, e:
             if settings.DEBUG or forced:
-                raise e
+                raise
 
         # 5. Or don't do anything in production
         return self.nodelist.render(context)
