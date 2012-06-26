@@ -4,8 +4,6 @@ from compressor.exceptions import UncompressableFileError
 
 
 class CssCompressor(Compressor):
-    template_name = "compressor/css.html"
-    template_name_inline = "compressor/css_inline.html"
 
     def __init__(self, content=None, output_prefix="css", context=None):
         super(CssCompressor, self).__init__(content=content,
@@ -22,17 +20,22 @@ class CssCompressor(Compressor):
             elem_name = self.parser.elem_name(elem)
             elem_attribs = self.parser.elem_attribs(elem)
             if elem_name == 'link' and elem_attribs['rel'].lower() == 'stylesheet':
-                basename = self.get_basename(elem_attribs['href'])
-                filename = self.get_filename(basename)
-                data = (SOURCE_FILE, filename, basename, elem)
+                try:
+                    basename = self.get_basename(elem_attribs['href'])
+                    filename = self.get_filename(basename)
+                    data = (SOURCE_FILE, filename, basename, elem)
+                except UncompressableFileError:
+                    if settings.DEBUG:
+                        raise
             elif elem_name == 'style':
                 data = (SOURCE_HUNK, self.parser.elem_content(elem), None, elem)
             if data:
                 self.split_content.append(data)
                 media = elem_attribs.get('media', None)
-                # Append to the previous node if it had the same media type,
-                # otherwise create a new node.
-                if self.media_nodes and self.media_nodes[-1][0] == media:
+                # Append to the previous node if it had the same media type
+                append_to_previous = self.media_nodes and self.media_nodes[-1][0] == media
+                # and we are not just precompiling, otherwise create a new node.
+                if append_to_previous and settings.COMPRESS_ENABLED:
                     self.media_nodes[-1][1].split_content.append(data)
                 else:
                     node = CssCompressor(content=self.parser.elem_str(elem),

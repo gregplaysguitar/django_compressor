@@ -4,8 +4,6 @@ from compressor.exceptions import UncompressableFileError
 
 
 class JsCompressor(Compressor):
-    template_name = "compressor/js.html"
-    template_name_inline = "compressor/js_inline.html"
 
     def __init__(self, content=None, output_prefix="js", context=None):
         super(JsCompressor, self).__init__(content, output_prefix, context)
@@ -18,10 +16,14 @@ class JsCompressor(Compressor):
         for elem in self.parser.js_elems():
             attribs = self.parser.elem_attribs(elem)
             if 'src' in attribs:
-                basename = self.get_basename(attribs['src'])
-                filename = self.get_filename(basename)
-                content = (SOURCE_FILE, filename, basename, elem)
-                self.split_content.append(content)
+                try:
+                    basename = self.get_basename(attribs['src'])
+                    filename = self.get_filename(basename)
+                    content = (SOURCE_FILE, filename, basename, elem)
+                    self.split_content.append(content)
+                except UncompressableFileError:
+                    if settings.DEBUG:
+                        raise
             else:
                 content = self.parser.elem_content(elem)
                 self.split_content.append((SOURCE_HUNK, content, None, elem))
